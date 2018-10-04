@@ -346,7 +346,9 @@ Would be almost as-if the following code were written, instead:
 
 In other words, `concept_cast` is a cast which statically checks for concept candidacy and asserts this of
 the result.  It is not used to lie about something being a model of a concept, unlike other casts such as
-`reinterpret_cast`.
+`reinterpret_cast`.  The cast needn't be implemented by rewriting the expression to the specified lambda
+form, but it should be semantically similar, in that the result of such a cast is considered to be
+a constrained value.
 
 Now with this primitive, we can start to explore some potential solutions to some of the problems we have,
 especially the transitivity (shortcoming 1) problem:
@@ -364,9 +366,10 @@ ___Shortcoming 1 Code___
 ```
 
 Well, clearly `concept_cast` hasn't made the situation any better in terms of syntax, but it does provide
-a mechanism to force the compiler to reanalyze whether a value matches a concept.  We will need to go further,
-but it is worth pointing out that this `concept_cast` has some semantic overlap with a few of the proposals
-that ask for concept-deduced `auto` and similar things.
+a mechanism to force the compiler to reanalyze whether a value matches a concept and to reintroduce
+a constraint on an expression.  We will need to go further, but it is worth pointing out that this
+`concept_cast` has some semantic overlap with a few of the proposals that ask for concept-deduced `auto`
+and similar things.
 
 Using `concept_cast` we can go further and introduce a new keyword `decltype for concept`.  Hopefully its
 meaning is mostly self-evident.  This keyword is used thus:
@@ -498,7 +501,6 @@ general case becomes a major nightmare, as discussed in earlier sections.
 Returning to the composition of functions case, such as `std::identity`, we see that thus far, we haven't
 delivered on the promise to make that code clean (let alone make it so easy to use that it's invisible).
 
-
 ___Shortcoming 1 Code___
 ```
     // The problematic variation:
@@ -543,15 +545,15 @@ as the constraint replacer syntax affects how callers will call this function...
 ODR violations.  This distinction between affecting the definition and affecting the caller will become
 extremely important.
 
-As this decoration does not affect the definition of `identity`, but instead affects the callers, what exactly
-does it mean then?  Let's assume that the above `identity` is `std::identity`.  In that case, the following
-expression:
+The fect that this decoration does not affect the definition of `identity`, but instead affects the callers,
+might seem a bit baffling at first.  What exactly does it mean then?  Let's assume that the above `identity`
+is `std::identity`.  In that case, the following expression:
 
 ```
 std::identity( constrainedVariable )
 ```
 
-can be interpretted almost as if it were rewritten to be:
+can be interpretted almost as-if it were rewritten to be:
 ```
 concept_cast< decltype for concept( constrainedVariable ) & >( std::identity( constrainedVariable ) )
 ```
@@ -649,6 +651,26 @@ and were compiled with it, binding that constraint replacement to the function w
 As functions which don't know about constraints yet are all that there is, we won't break any existing code,
 as the definition of `operator[]` is unchanged.
 
+With the appropriate amount of propagation of constraints that are parameters to constraints, it may be
+possible to properly constrain operations on related types, such as iterators.  For example:
+
+```
+template< typename Element >
+class vector
+{
+  public:
+    iterator begin() const;
+    T &operator[] ( const std::size_t idx );
+};
+```
+If `RandomAccessContainer< T >` requires that `begin()` return `RandomAccessIterator< T >`, and
+`RandomAccessIterator< T >` requires that `operator *()` return `T &`, then the results of iteration
+can be implicitly deduced to have the same constraint as the constraint on the container elements
+themselves.  This transitivity of constraint application permits containers and similar objects to
+function correctly in constraint replacement situations.  Most of this information is known to the
+compiler already and it often does perform the concept tests for these situations, during constrained
+template instantiation.
+
 ### From Function Templates Which Explicitly Return Concepts
 
 When new functions will be written that use "natural" syntax for concepts, we will have more constraint
@@ -714,8 +736,8 @@ constraint replacers should dominate over any implicitly generated constraint re
 We also suggest that a keyword such as `using this typename< delete > for concept return` exist to explicitly
 disable constraint replacers from being implicitly generated for a function.
 
-With these rules and a sensible set of defaults we should be able to make most existing code play well with
-this overload resolution scheme and constraint propagation.  We suggest that while all of these implied
+With these rules providing a sensible set of defaults we should be able to make most existing code play well
+with this overload resolution scheme and constraint propagation.  We suggest that while all of these implied
 constraint replacers could be useful, the very useful ones are those deduced from templates, and the most
 useful will be those deduced from concept definitions.
 
