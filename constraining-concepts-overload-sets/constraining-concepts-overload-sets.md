@@ -10,6 +10,16 @@ ISO/IEC JTC1 SC22 WG21 P0782D2
 Abstract
 --------
 
+This proposal outlines a set of improvements to C++ Concepts that permits reasoning about Concepts
+in an interface-like manner.  Under this proposal, function calls on variables constrained by a
+Concept will be prevented from resolving to some overloads that are irrelevant to the description
+of the Concept's interface.  This proposal also adds a set of implicit Concept deduction rules for
+types which are returned from functions.  These implicit rules create a system by which these altered
+overload resolutions apply in various equivalent pieces of code.
+
+Introduction
+------------
+
 The central purpose of Concepts is to simplify generic programming such that it is approachable to the
 non-expert developer.  In general it makes great strides towards this end particularly in the capacity
 of invoking a generic function; however, the Concepts design does not deliver on this promise in the
@@ -25,10 +35,10 @@ the author's expectations thereof.  Unfortunately, this oversight cannot be corr
 this later would entail silent behavioral changes to existing code after the release of Concepts in a
 standard.  In other words, this is our only chance to get this right.
 
-First, we'll reiterate a list of solution variations that we're not proposing.  This topic has been
-highly debated for years, and many potential solutions have been explored.  We want to highlight that
-this solution we're proposing is a novel idea, not one of these earlier ideas in disguise.
-Next, we'll outline what the committee asked for in improvements and discuss how we might effect those
+First, we'll reiterate a list of solution variations that we're not proposing.  We've debated this
+topic for years, and many potential solutions have been explored.  We want to highlight that
+the solution that we're proposing is a novel idea, not one of these earlier ideas in disguise.
+Next, we'll outline improvements that the committee asked for and discuss how we might effect those
 results.  Then, we'll explain our much-revised proposal and how it, we believe, solves the problem.
 Later we'll discuss the original proposal from P0782R1, leaving it mostly as it was, including motivations
 and examples, but correcting some errors and highlighting how this expanded proposal affects such examples.
@@ -38,7 +48,7 @@ future work and then conclusions.
 What This Paper is  _<b><u>NOT</b></u>_  Proposing
 --------------------------------------------------
 
-Before we outline our amended proposal, we would like to quickly review a list of things that we are not
+Before we outline our amended proposal, we would like to quickly review a list of things that we are _not_
 proposing.  All of these things have been highly contentious in the past, at best, and have led to
 undesirable consequences in some cases.
 
@@ -55,9 +65,9 @@ undesirable consequences in some cases.
 11. Any form of extra compiletime type generation
 12. Encoding concepts into the type system.
 
-All of the mechanisms we're proposing are ways that the compiler can use existing information it already has
-to understand how to propagate constraint information, or how to provide such information to the compiler
-where it lacks it.
+The mechanisms we're proposing are ways that the compiler can use existing information it _already
+has_ to understand how to propagate constraint information or, when needed, how to rediscover missing
+constraint information from already available information.
 
 Overload Resolution is Insufficient
 -----------------------------------
@@ -173,7 +183,7 @@ thus preventing myriad optimizations.
 
 Alternatively the boxing type could be a distinct wrapper for each underlying type, preserving the true type
 information throughout the compile process.  The downsides of this are well known.  This is what concept maps
-were in C++0x.  We reiterate that we are NOT proposing these.  We merely mention them here to explore the
+were in C++0x.  We reiterate that we are _not_ proposing these.  We merely mention them here to explore the
 possibilities and to remind the reader that we've avoided this route.
 
 A more subtle solution would use the type system a bit differently.  Instead of building the concept information
@@ -186,31 +196,31 @@ to have some very surprising effects.
 Consider the following function template:
 `void add_last_one( T, U );`.  Although we wouldn't be making `T` or `U` into a box, both `T` and `U` were
 `std::list< ... >` and we passed a `U` which was a constrained `std::list< ... >`, wherein, perhaps, the
-`.back` operation is const-only, we start to get into some very problematic territory.  The problem is when
-the `u.back()` operation runs, it will be a different one than `T` gets.  The fact that one is `const`
+`.back` operation is const-only, we start to get into some very problematic territory.  The problem is that
+when the `u.back()` operation runs, it will be a different one than `T` gets.  The fact that one is `const`
 may affect the choice of performing move semantics, which may pessimize a function at best, or even give
 different behavior at worst.  Now imagine that this function `add_last_one` is a called by a member function
 of a templated container.  Now that container's entire operation varies based upon constraints to its member
-functions.  Eventually we wind up with multiple implementations of critical member functions which differ
+functions.  Eventually, we wind up with multiple implementations of critical member functions that differ
 in the operations they do, which could seriously jeopardize the integrity of the memory layout.  It's almost
-as-if two different type implementations were fighting over the same memory.
+as-if two different type implementations were fighting over the *same* memory.
 
 This mightn't be a problem if memory layout were identical under all variations, but note that
 `std::vector< bool >` is a totally different layout to `std::vector< struct_containing_a_single_bool >`.
-Further consider that `add_last_one` might be a critical low-level library function such as `uninitialized_copy`
+Further, consider that `add_last_one` might be a critical low-level library function such as `uninitialized_copy`
 or `std::copy` used in the implementation of `std::vector< ... >::reserve`.  In order to prevent two different
-implementations of `::reserve` working on the same `std::vector< ... >` memory, it would become necessary to
-divorce their implementations all the way up to the highest, outermost template.  Thus we have sort of
+implementations of `::reserve` working on the same `std::vector< ... >`'s memory, it would become necessary to
+divorce their implementations all the way up to the outermost template.  Thus we have sort of
 re-invented the concept map, just raised it up to a higher level -- push the concept map out to the broadest
-instantiated type using it.  This also eventually means that deep copy-in and deep copy-out semantics would
-become necessary as the instantiated outer types can't be guaranteed to agree on layout and invariants, and
-forcing them to agree can lead to all sorts of problems..
+instantiated type using it.  This also means that deep copy-in and deep copy-out semantics would become
+necessary as the instantiated outer types can't be guaranteed to agree on layout and invariants, and
+forcing them to agree can lead to all sorts of problems.
 
 Maybe it mightn't be so bad if we could limit the depth of constraint propagation to only a single, or a few
 levels.  However, the same ugly problems of ODR violations and layout battles still await us here -- a
 function instantiated at "limit - 1" could have different behavior than "limit - 2", as the function at "limit"
 now would pass on constraint information one more level and thus change definitions again.  Requiring the
-author to know how deep in a call hierarchy of templates a function is instantiation is a completely unviable
+author to know how deep in a call hierarchy of templates a function is instantiated is a completely unviable
 option.  And trying to make the compiler solve for some stable expansion which doesn't change meaning runs
 into the halting problem.
 
@@ -231,13 +241,13 @@ What kinds of compromises might we have to make?  If it's not in the type system
 Obviously, the benefit of keeping it out of the type system is to avoid the problems that we outlined in
 our section "The Problem of Preserving Concept Metadata at Compiletime".  However, the problem goes deeper
 than just keeping it out of the type system -- we can't preserve any of it beyond immediate use at a call
-site.  If we preserved constraint information into deeper template instantiations we'd merely reintroduce
-the divergent implementations problem (ODR issue) and then either try to solve it with name mangling (basically
-the type system) or by just hoping that it's not a big problem (which it certainly will be a big problem for
-someone!)
+site.  If we preserved constraint information, carrying it into deeper template instantiations we'd merely
+reintroduce the divergent implementations problem (ODR issue) and then either try to solve it with name
+mangling (basically the type system) or by just hoping that it's not a big problem (which it certainly will
+be a big problem for someone!)
 
 Of course losing the concept information is what we were trying to prevent, so how do we preserve type
-information while not preserving it?  We don't!  We instead rely upon reintroducing it at various points
+information while not preserving it?  We don't!  We instead rely upon _reintroducing it_ at various points
 in expression checking.  In other words, we accept and embrace the fact that constraint information evaporates
 across any function call, but we find ways of reacquiring it from contextual clues, hints to the compiler,
 definitions of concepts, and declarations of functions.  Our solution relies upon introducing a few new
@@ -545,7 +555,7 @@ as the constraint replacer syntax affects how callers will call this function...
 ODR violations.  This distinction between affecting the definition and affecting the caller will become
 extremely important.
 
-The fect that this decoration does not affect the definition of `identity`, but instead affects the callers,
+The fact that this decoration does not affect the definition of `identity`, but instead affects the callers,
 might seem a bit baffling at first.  What exactly does it mean then?  Let's assume that the above `identity`
 is `std::identity`.  In that case, the following expression:
 
@@ -1545,9 +1555,10 @@ SF: 11 - F: 12 - N: 6 - A: 0 - SA: 0
 Acknowledgements
 ----------------
 
-The authors would like to thank Nathan Myers, Allan Deutsch, Hal Finkel, Lisa Lippincott, Gabriel Dos Reis,
-Justin McHugh, Herb Sutter, Faisal Vali, and numerous others for their research, support, input, review, and
-guidance throughout the lifetime of this proposal.  Without their assistance this would not have been possible.
+The authors would like to thank Nathan Myers, Allan Deutsch, Hal Finkel, Laura Reznick, Lisa Lippincott,
+Gabriel Dos Reis, Justin McHugh, Herb Sutter, Faisal Vali, Mike Gorbavitsky, and numerous others for their
+research, support, input, review, and guidance throughout the lifetime of this proposal.  Without their
+assistance this would not have been possible.
 
 References
 ----------
