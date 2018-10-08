@@ -1,7 +1,7 @@
 Constraining Concepts Overload Sets
 ===================================
 
-ISO/IEC JTC1 SC22 WG21 P0782D2
+ISO/IEC JTC1 SC22 WG21 P0782R2
 
     ADAM David Alan Martin  (adam@recursive.engineer)
     Erich Keane             (erich.keane@intel.com)
